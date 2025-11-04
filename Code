@@ -1,0 +1,261 @@
+library(dplyr)
+library(ggplot2)
+
+# ---------------- Parameters ----------------
+sim_generations <- 500
+generation_time <- 3        # not needed for simulation itself, just metadata
+base_introgression <- 0.02
+migration_rate <- 0.01
+assimilation_rate <- 0.01
+population_growth <- 1.65   # geometric growth per generation
+
+# Scenarios: Ne_wolf, Ne_dog
+scenarios <- list(
+  none       = list(Ne_wolf = 210,  Ne_dog = 2100),
+  supportive = list(Ne_wolf = 2100, Ne_dog = 2100),
+  active     = list(Ne_wolf = 2100, Ne_dog = 210)
+)
+
+# ---------------- Simulation function ----------------
+simulate_introgression <- function(Ne_wolf, Ne_dog, generations, base_intro, mig_rate, assim_rate) {
+  
+  ancestry_wolf <- numeric(generations + 1)
+  ancestry_wolf[1] <- 0  # initially wolves have 0 dog ancestry
+  
+  Nw <- Ne_wolf
+  Nd <- Ne_dog
+  
+  for (gen in 1:generations) {
+    # Effective introgression rate decreases with wolf population
+    eff_intro <- base_intro * (Nd / (Nd + Nw)) * mig_rate
+    
+    # Update ancestry fraction in wolves
+    ancestry_wolf[gen + 1] <- ancestry_wolf[gen] * (1 - assim_rate) + eff_intro
+    
+    # Apply population growth
+    Nw <- Nw * population_growth
+    Nd <- Nd * population_growth
+  }
+  
+  data.frame(
+    generation = 0:generations,
+    wolf_ancestry = ancestry_wolf
+  )
+}
+
+# ---------------- Run scenarios ----------------
+results <- list()
+for (sc in names(scenarios)) {
+  pars <- scenarios[[sc]]
+  df <- simulate_introgression(
+    Ne_wolf = pars$Ne_wolf,
+    Ne_dog  = pars$Ne_dog,
+    generations = sim_generations,
+    base_intro = base_introgression,
+    mig_rate = migration_rate,
+    assim_rate = assimilation_rate
+  )
+  df$scenario <- sc
+  results[[sc]] <- df
+}
+
+# Combine results
+all_results <- bind_rows(results)
+
+# ---------------- Plot ----------------
+ggplot(all_results, aes(x = generation, y = wolf_ancestry, color = scenario)) +
+  geom_line(size = 1.2) +
+  labs(title = "Wolf ancestry due to dog introgression over time",
+       x = "Generation",
+       y = "Mean dog ancestry in wolves") +
+  theme_minimal() +
+  scale_color_brewer(palette = "Set1")
+
+# ---------------- Save results ----------------
+write.csv(all_results, "wolf_dog_introgression_results.csv", row.names = FALSE)
+
+
+_____________________________________________
+_____________________________________________ deterministic
+_____________________________________________
+
+
+library(dplyr)
+library(ggplot2)
+
+# ---------------- Parameters ----------------
+sim_generations <- 5000
+generation_time <- 2        # metadata
+base_introgression <- 0.02
+migration_rate <- 0.01
+assimilation_rate <- 0.01
+wolf_growth_rate <- 0.01    # logistic growth rate
+wolf_K <- 2220              # wolf carrying capacity
+
+# Scenarios: Ne_wolf, Ne_dog
+scenarios <- list(
+  none       = list(Ne_wolf = 210,  Ne_dog = 2100),
+  supportive = list(Ne_wolf = 2100, Ne_dog = 2100),
+  active     = list(Ne_wolf = 2100, Ne_dog = 210)
+)
+
+# ---------------- Simulation function ----------------
+simulate_introgression <- function(Ne_wolf, Ne_dog, generations, base_intro, mig_rate,
+                                  wolf_growth, wolf_K, assim_rate = 0) {
+  
+  ancestry_wolf <- numeric(generations + 1)
+  ancestry_wolf[1] <- 0.02  # start at 0.02
+  
+  Nw <- Ne_wolf
+  Nd <- Ne_dog
+  
+  for (gen in 1:generations) {
+    eff_intro <- base_intro * (Nd / (Nd + Nw)) * mig_rate
+    ancestry_wolf[gen + 1] <- ancestry_wolf[gen] + eff_intro
+    if (ancestry_wolf[gen + 1] > 1) ancestry_wolf[gen + 1] <- 1
+    
+    Nw <- Nw + wolf_growth * Nw * (wolf_K - Nw) / wolf_K
+    Nd <- Nd
+  }
+  
+  data.frame(
+    generation = 0:generations,
+    wolf_ancestry = ancestry_wolf
+  )
+}
+
+# ---------------- Run scenarios ----------------
+results <- list()
+for (sc in names(scenarios)) {
+  pars <- scenarios[[sc]]
+  df <- simulate_introgression(
+    Ne_wolf = pars$Ne_wolf,
+    Ne_dog  = pars$Ne_dog,
+    generations = sim_generations,
+    base_intro = base_introgression,
+    mig_rate = migration_rate,
+    assim_rate = assimilation_rate,
+    wolf_growth = wolf_growth_rate,
+    wolf_K = wolf_K
+  )
+  df$scenario <- sc
+  results[[sc]] <- df
+}
+
+# Combine results
+all_results <- bind_rows(results)
+
+# ---------------- Plot ----------------
+ggplot(all_results, aes(x = generation, y = wolf_ancestry, color = scenario)) +
+  geom_line(size = 1.2) +
+  labs(title = "Wolf ancestry due to dog introgression over time",
+       x = "Generation",
+       y = "Mean dog ancestry in wolves") +
+  theme_minimal() +
+  scale_color_brewer(palette = "Set1") +
+  coord_cartesian(ylim = c(0, 0.60))  # <- set y-axis max to 0.25
+
+
+# ---------------- Save results ----------------
+write.csv(all_results, "wolf_dog_introgression_results_logistic.csv", row.names = FALSE)
+
+
+_____________________________________________
+_____________________________________________ stochastic
+_____________________________________________
+
+
+library(dplyr)
+library(ggplot2)
+
+# ---------------- Parameters ----------------
+
+library(dplyr)
+library(ggplot2)
+
+# ---------------- Parameters ----------------
+sim_generations <- 5000
+generation_time <- 3
+base_introgression <- 0.02
+migration_rate <- 0.01
+population_growth <- 0.01
+wolf_K <- 2220
+n_replicates <- 5
+
+scenarios <- list(
+  none       = list(Ne_wolf = 210,  Ne_dog = 2100),
+  supportive = list(Ne_wolf = 2100, Ne_dog = 2100),
+  active     = list(Ne_wolf = 2100, Ne_dog = 210)
+)
+
+# ---------------- Stochastic simulation ----------------
+simulate_introgression_stochastic <- function(Ne_wolf, Ne_dog, generations,
+                                              base_intro, mig_rate,
+                                              wolf_growth, wolf_K) {
+  ancestry_wolf <- numeric(generations + 1)
+  ancestry_wolf[1] <- 0.02
+  
+  Nw <- Ne_wolf
+  Nd <- Ne_dog
+  
+  for (gen in 1:generations) {
+    eff_intro <- base_intro * (Nd / (Nd + Nw)) * mig_rate
+    introgressed <- rbinom(1, Nw, eff_intro) / Nw
+    ancestry_wolf[gen + 1] <- ancestry_wolf[gen] + introgressed
+    if (ancestry_wolf[gen + 1] > 1) ancestry_wolf[gen + 1] <- 1
+    
+    expected_growth <- Nw + wolf_growth * Nw * (wolf_K - Nw) / wolf_K
+    Nw <- rpois(1, lambda = expected_growth)
+  }
+  
+  ancestry_wolf
+}
+
+# ---------------- Run scenarios with replicates ----------------
+results <- list()
+for (sc in names(scenarios)) {
+  pars <- scenarios[[sc]]
+  replicate_list <- lapply(1:n_replicates, function(r) {
+    simulate_introgression_stochastic(
+      Ne_wolf = pars$Ne_wolf,
+      Ne_dog  = pars$Ne_dog,
+      generations = sim_generations,
+      base_intro = base_introgression,
+      mig_rate = migration_rate,
+      wolf_growth = population_growth,
+      wolf_K = wolf_K
+    )
+  })
+  
+  # Combine replicates
+  df <- as.data.frame(do.call(cbind, replicate_list))
+  df <- df %>%
+    mutate(generation = 0:sim_generations) %>%
+    rowwise() %>%
+    mutate(
+      mean_ancestry = mean(c_across(starts_with("V"))),
+      sd_ancestry = sd(c_across(starts_with("V")))
+    ) %>%
+    select(generation, mean_ancestry, sd_ancestry)
+  
+  df$scenario <- sc
+  results[[sc]] <- df
+}
+
+all_results <- bind_rows(results)
+
+# ---------------- Plot with ribbons ----------------
+ggplot(all_results, aes(x = generation, y = mean_ancestry, color = scenario, fill = scenario)) +
+  geom_line(size = 1.2) +
+  geom_ribbon(aes(ymin = mean_ancestry - sd_ancestry, ymax = mean_ancestry + sd_ancestry),
+              alpha = 0.2, color = NA) +
+  labs(title = "Stochastic wolf ancestry due to dog introgression",
+       x = "Generation",
+       y = "Mean dog ancestry in wolves") +
+  theme_minimal() +
+  scale_color_brewer(palette = "Set1") +
+  scale_fill_brewer(palette = "Set1") +
+  coord_cartesian(ylim = c(0, 0.60))
+
+# ---------------- Save results ----------------
+write.csv(all_results, "wolf_dog_introgression_stochastic_ribbons.csv", row.names = FALSE)
