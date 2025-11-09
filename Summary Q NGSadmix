@@ -1,0 +1,83 @@
+Summary Q NGSadmix
+
+# ==== PARAMETERS ====
+K <- 5                                # number of ancestral clusters
+n_runs <- 10                          # number of replicate runs
+file_pattern <- "run_5_%d.qopt"       # filename pattern
+out_prefix <- "run5"                  # output prefix
+
+# ==== READ FILES ====
+runs <- sprintf(file_pattern, 1:n_runs)
+Qs <- lapply(runs, function(f) {
+  if(!file.exists(f)) stop(paste("Missing file:", f))
+  as.matrix(read.table(f, header=FALSE))
+})
+
+# Check dimensions
+n <- nrow(Qs[[1]])
+stopifnot(all(sapply(Qs, nrow) == n))
+stopifnot(all(sapply(Qs, ncol) == K))
+
+# Align labels
+ref <- Qs[[1]]  # reference run
+
+align_permute <- function(target, ref) {
+  # compute correlation between columns (clusters)
+  cormat <- cor(ref, target)
+  
+  # turn it into a *nonnegative cost matrix* 
+  cost <- 1 - abs(cormat)
+  
+  perm <- solve_LSAP(cost)  
+  aligned <- target[, as.numeric(perm)]
+  return(aligned)
+}
+
+aligned_Qs <- list(ref)
+for (i in 2:length(Qs)) {
+  aligned_Qs[[i]] <- align_permute(Qs[[i]], ref)
+}
+
+# Computer meana and SD
+mat_mean <- Reduce("+", aligned_Qs) / length(aligned_Qs)
+mat_sd   <- sqrt(Reduce("+", lapply(aligned_Qs, function(x) (x - mat_mean)^2)) / (length(aligned_Qs) - 1))
+
+# Save output
+write.table(mat_mean,
+            file = paste0(out_prefix, "_Qmean.txt"),
+            row.names = FALSE, col.names = FALSE, quote = FALSE, sep = "\t")
+write.table(mat_sd,
+            file = paste0(out_prefix, "_Qsd.txt"),
+            row.names = FALSE, col.names = FALSE, quote = FALSE, sep = "\t")
+
+# Summary
+cat("Aligned and averaged", n_runs, "runs.\n")
+cat("Output written to:\n  ", paste0(out_prefix, "_Qmean.txt"), "\n  ", paste0(out_prefix, "_Qsd.txt"), "\n")
+
+# Plot run5_Qmean
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+
+# Read data
+Q <- read.table("run5_Qmean.txt")
+samples <- read.table("samples.txt", stringsAsFactors = FALSE)[,1]
+colnames(Q) <- paste0("Cluster", 1:ncol(Q))
+Q$Individual <- samples
+
+# Convert to long format for ggplot
+Q_long <- Q %>%
+  pivot_longer(cols = starts_with("Cluster"),
+               names_to = "Cluster",
+               values_to = "Proportion")
+
+# Plot
+ggplot(Q_long, aes(x = Individual, y = Proportion, fill = Cluster)) +
+  geom_bar(stat = "identity", width = 1) +
+  scale_fill_brewer(palette = "Set2") +
+  theme_classic() +
+  theme(axis.text.x = element_blank(),  # hide labels if too many
+        axis.ticks.x = element_blank(),
+        legend.position = "top") +
+  ylab("Admixture proportion") +
+  xlab("Individuals")
